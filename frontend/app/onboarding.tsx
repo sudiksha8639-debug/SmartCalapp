@@ -60,11 +60,11 @@ export default function OnboardingScreen() {
         weight: parseFloat(weight),
         height: parseFloat(height),
         cycle_length: parseInt(cycleLength),
-        last_period_date: lastPeriodDate || null,
+        last_period_date: lastPeriodDate && lastPeriodDate.trim() !== '' ? lastPeriodDate : null,
         has_pcos: hasPCOS,
         dietary_restrictions: dietaryRestrictions,
         budget,
-        mess_info: messInfo,
+        mess_info: messInfo || null,
         activity_level: activityLevel,
       };
 
