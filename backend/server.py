@@ -643,7 +643,12 @@ def calculate_water_goal(user: User) -> int:
     
     # Adjust for menstrual cycle
     if user.last_period_date:
-        days_since = (datetime.now(timezone.utc) - user.last_period_date).days
+        # Make last_period_date timezone-aware if it isn't
+        last_period = user.last_period_date
+        if last_period.tzinfo is None:
+            last_period = last_period.replace(tzinfo=timezone.utc)
+        
+        days_since = (datetime.now(timezone.utc) - last_period).days
         cycle_day = days_since % (user.cycle_length or 28)
         
         if cycle_day <= 5:  # Menstrual phase - increase hydration
