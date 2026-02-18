@@ -340,6 +340,17 @@ async def logout(response: Response, current_user: User = Depends(require_auth))
 @api_router.post("/auth/guest")
 async def create_guest():
     user_id = f"guest_{uuid.uuid4().hex[:12]}"
+    
+    # Create guest user document in database
+    guest_user = {
+        "user_id": user_id,
+        "email": f"{user_id}@guest.local",
+        "name": "Guest User",
+        "picture": None,
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.users.insert_one(guest_user)
+    
     guest_token = create_access_token({"sub": user_id, "guest": True})
     return {"user_id": user_id, "token": guest_token, "is_guest": True}
 
