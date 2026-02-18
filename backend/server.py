@@ -166,8 +166,10 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
     
     # Check if it's an Emergent session token
     if session_token.startswith("eme_") or len(session_token) > 100:
+        logging.info("Token identified as Emergent session token")
         session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
         if not session:
+            logging.error("Session not found in database")
             return None
         
         # Check expiry with timezone awareness
@@ -176,24 +178,30 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         
         if expires_at < datetime.now(timezone.utc):
+            logging.error("Session expired")
             return None
         
         user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
         if user_doc:
             return User(**user_doc)
     else:
+        logging.info("Token identified as JWT token")
         # It's a JWT token
         try:
             payload = jwt.decode(session_token, SECRET_KEY, algorithms=[ALGORITHM])
+            logging.info(f"JWT decoded successfully: {payload}")
             user_id = payload.get("sub")
             if not user_id:
                 logging.error("No user_id in JWT payload")
                 return None
             
             user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+            logging.info(f"User doc found: {user_doc is not None}")
             if user_doc:
                 try:
-                    return User(**user_doc)
+                    user_obj = User(**user_doc)
+                    logging.info(f"User object created successfully for {user_id}")
+                    return user_obj
                 except Exception as e:
                     logging.error(f"Failed to create User object: {e}")
                     return None
@@ -204,6 +212,8 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
             return None
         except Exception as e:
             logging.error(f"Unexpected error in auth: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
             return None
     
     return None
