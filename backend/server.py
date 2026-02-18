@@ -181,12 +181,20 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
             payload = jwt.decode(session_token, SECRET_KEY, algorithms=[ALGORITHM])
             user_id = payload.get("sub")
             if not user_id:
+                logging.error("No user_id in JWT payload")
                 return None
             
             user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
             if user_doc:
-                return User(**user_doc)
-        except jwt.JWTError:
+                try:
+                    return User(**user_doc)
+                except Exception as e:
+                    logging.error(f"Failed to create User object: {e}")
+                    return None
+            else:
+                logging.error(f"User not found in database: {user_id}")
+        except jwt.JWTError as e:
+            logging.error(f"JWT decode error: {e}")
             return None
     
     return None
