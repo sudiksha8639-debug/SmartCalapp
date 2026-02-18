@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
 import bcrypt
+import jose
 from jose import jwt
 import base64
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
