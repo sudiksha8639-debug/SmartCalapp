@@ -724,6 +724,350 @@ async def get_current_cycle_info(current_user: User = Depends(require_auth)):
         "next_period": next_period.strftime("%Y-%m-%d")
     }
 
+# ============= EXAM MODE =============
+
+@api_router.post("/profile/exam-mode")
+async def set_exam_mode(exam_data: Dict[str, Any], current_user: User = Depends(require_auth)):
+    """Set exam mode with start and end dates"""
+    await db.users.update_one(
+        {"user_id": current_user.user_id},
+        {"$set": {
+            "exam_mode": True,
+            "exam_start_date": datetime.fromisoformat(exam_data["start_date"].replace("Z", "+00:00")),
+            "exam_end_date": datetime.fromisoformat(exam_data["end_date"].replace("Z", "+00:00"))
+        }}
+    )
+    return {"message": "Exam mode activated", "recommendations": [
+        "Focus on brain-boosting foods: walnuts, blueberries, dark chocolate",
+        "Stay hydrated - aim for 2.5L water daily",
+        "Avoid heavy meals before studying - opt for light snacks",
+        "Include omega-3 rich foods: fish, chia seeds, flaxseeds"
+    ]}
+
+@api_router.delete("/profile/exam-mode")
+async def disable_exam_mode(current_user: User = Depends(require_auth)):
+    """Disable exam mode"""
+    await db.users.update_one(
+        {"user_id": current_user.user_id},
+        {"$set": {"exam_mode": False}}
+    )
+    return {"message": "Exam mode disabled"}
+
+# ============= PATTERN DETECTION =============
+
+@api_router.get("/patterns/analyze")
+async def analyze_patterns(current_user: User = Depends(require_auth)):
+    """Analyze patterns in food, cycle, and symptoms data"""
+    try:
+        # Get last 30 days of data
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        food_logs = await db.food_logs.find(
+            {"user_id": current_user.user_id, "timestamp": {"$gte": thirty_days_ago}},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        cycle_logs = await db.cycle_logs.find(
+            {"user_id": current_user.user_id},
+            {"_id": 0}
+        ).sort("start_date", -1).limit(3).to_list(3)
+        
+        # Analyze patterns with AI
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"pattern_{current_user.user_id}_{datetime.now().timestamp()}",
+            system_message="You are a health pattern analyst specializing in detecting correlations between food, menstrual cycles, and symptoms."
+        ).with_model("openai", "gpt-5.2")
+        
+        prompt = f"""Analyze health patterns for an Indian college student:
+
+User Profile:
+- Age: {current_user.age}
+- PCOS: {current_user.has_pcos}
+- Dietary: {', '.join(current_user.dietary_restrictions or [])}
+
+Recent Food Logs: {len(food_logs)} meals logged
+Recent Cycle Data: {len(cycle_logs)} cycles tracked
+
+Detect patterns and provide insights in JSON format:
+{{
+  "detected_patterns": ["pattern 1", "pattern 2"],
+  "food_symptom_correlations": ["correlation 1"],
+  "cycle_food_patterns": ["pattern 1"],
+  "recommendations": ["actionable recommendation 1"]
+}}
+
+Focus on:
+1. Food choices during different cycle phases
+2. Symptoms that correlate with specific foods
+3. Eating patterns (timing, frequency, portions)
+4. Nutritional gaps or excesses"""
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        # Parse response
+        import json
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = response
+            
+            patterns = json.loads(json_str)
+        except:
+            patterns = {
+                "detected_patterns": ["Track more meals for better pattern detection"],
+                "food_symptom_correlations": [],
+                "cycle_food_patterns": [],
+                "recommendations": ["Log meals consistently for 2 weeks to detect patterns"]
+            }
+        
+        return patterns
+        
+    except Exception as e:
+        logging.error(f"Pattern analysis error: {str(e)}")
+        return {
+            "detected_patterns": [],
+            "food_symptom_correlations": [],
+            "cycle_food_patterns": [],
+            "recommendations": ["Keep tracking to enable pattern detection"]
+        }
+
+# ============= DIGESTIVE PREDICTION =============
+
+@api_router.post("/predict/digestion")
+async def predict_digestion(meal_data: Dict[str, Any], current_user: User = Depends(require_auth)):
+    """Predict indigestion probability for a planned meal"""
+    try:
+        # Get cycle info
+        cycle_info_data = await get_current_cycle_info(current_user)
+        
+        # Get recent symptom history
+        recent_cycles = await db.cycle_logs.find(
+            {"user_id": current_user.user_id},
+            {"_id": 0}
+        ).sort("start_date", -1).limit(3).to_list(3)
+        
+        common_symptoms = []
+        for cycle in recent_cycles:
+            common_symptoms.extend(cycle.get("symptoms", []))
+        
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"digestion_{current_user.user_id}_{datetime.now().timestamp()}",
+            system_message="You are a digestive health predictor for Indian women."
+        ).with_model("gemini", "gemini-3-flash-preview")
+        
+        prompt = f"""Predict digestion risk for this meal:
+
+Meal: {meal_data.get('meal_description', 'Not specified')}
+Meal Type: {meal_data.get('meal_type', 'snack')}
+
+User Context:
+- Current cycle phase: {cycle_info_data.get('phase', 'unknown')}
+- Cycle day: {cycle_info_data.get('day', 0)}
+- PCOS: {current_user.has_pcos}
+- Common symptoms: {', '.join(set(common_symptoms[:10]))}
+
+Provide prediction in JSON:
+{{
+  "risk_level": "low/medium/high",
+  "risk_percentage": 0-100,
+  "risk_factors": ["factor 1", "factor 2"],
+  "safer_alternatives": ["alternative 1", "alternative 2"],
+  "tips": ["tip 1", "tip 2"]
+}}"""
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        import json
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = response
+            
+            prediction = json.loads(json_str)
+        except:
+            prediction = {
+                "risk_level": "medium",
+                "risk_percentage": 50,
+                "risk_factors": ["Unable to analyze - track more meals"],
+                "safer_alternatives": [],
+                "tips": ["Listen to your body"]
+            }
+        
+        return prediction
+        
+    except Exception as e:
+        logging.error(f"Digestion prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============= ANEMIA RISK PREDICTOR =============
+
+@api_router.get("/health/anemia-risk")
+async def get_anemia_risk(current_user: User = Depends(require_auth)):
+    """Calculate anemia risk score based on iron intake and fatigue patterns"""
+    try:
+        # Get last 14 days of food logs
+        fourteen_days_ago = datetime.now(timezone.utc) - timedelta(days=14)
+        
+        food_logs = await db.food_logs.find(
+            {"user_id": current_user.user_id, "timestamp": {"$gte": fourteen_days_ago}},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # Get cycle data to check for heavy flow
+        recent_cycles = await db.cycle_logs.find(
+            {"user_id": current_user.user_id},
+            {"_id": 0}
+        ).sort("start_date", -1).limit(3).to_list(3)
+        
+        heavy_flow_count = sum(1 for c in recent_cycles if c.get("flow_intensity") == "heavy")
+        fatigue_mentions = sum(1 for c in recent_cycles if "Fatigue" in c.get("symptoms", []))
+        
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"anemia_{current_user.user_id}_{datetime.now().timestamp()}",
+            system_message="You are an anemia risk assessment specialist for young women in India."
+        ).with_model("openai", "gpt-5.2")
+        
+        prompt = f"""Assess anemia risk:
+
+User Profile:
+- Age: {current_user.age}
+- Recent meals logged: {len(food_logs)}
+- Heavy menstrual flow (last 3 cycles): {heavy_flow_count}
+- Fatigue reported: {fatigue_mentions} times
+- Dietary restrictions: {', '.join(current_user.dietary_restrictions or ['None'])}
+
+Provide assessment in JSON:
+{{
+  "risk_score": 0-100,
+  "risk_level": "low/moderate/high",
+  "risk_factors": ["factor 1", "factor 2"],
+  "iron_rich_foods": ["affordable food 1", "affordable food 2"],
+  "recommendations": ["recommendation 1", "recommendation 2"],
+  "warning_signs": ["sign 1", "sign 2"],
+  "should_consult_doctor": true/false
+}}
+
+Focus on affordable, accessible foods for Indian college students."""
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        import json
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = response
+            
+            assessment = json.loads(json_str)
+        except:
+            assessment = {
+                "risk_score": 30,
+                "risk_level": "moderate",
+                "risk_factors": ["Limited data available"],
+                "iron_rich_foods": ["Spinach", "Dates", "Jaggery", "Lentils"],
+                "recommendations": ["Track meals for better assessment"],
+                "warning_signs": ["Persistent fatigue", "Dizziness", "Pale skin"],
+                "should_consult_doctor": False
+            }
+        
+        return assessment
+        
+    except Exception as e:
+        logging.error(f"Anemia risk assessment error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============= CAUSAL PATTERN DETECTION =============
+
+@api_router.get("/patterns/weight-analysis")
+async def analyze_weight_changes(current_user: User = Depends(require_auth)):
+    """Explain weight changes with causal analysis"""
+    try:
+        # Get recent data
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        food_logs = await db.food_logs.find(
+            {"user_id": current_user.user_id, "timestamp": {"$gte": seven_days_ago}},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        water_logs = await db.water_logs.find(
+            {"user_id": current_user.user_id, "timestamp": {"$gte": seven_days_ago}},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        cycle_info = await get_current_cycle_info(current_user)
+        
+        # Calculate averages
+        avg_calories = sum(log.get("total_calories", 0) for log in food_logs) / max(len(food_logs), 1)
+        avg_sodium = sum(sum(item.get("sodium", 0) for item in log.get("items", [])) for log in food_logs) / max(len(food_logs), 1)
+        avg_water = sum(log.get("amount_ml", 0) for log in water_logs) / 7
+        
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"weight_{current_user.user_id}_{datetime.now().timestamp()}",
+            system_message="You are a health analyst explaining weight fluctuations to young women."
+        ).with_model("gemini", "gemini-3-flash-preview")
+        
+        prompt = f"""Explain potential weight changes:
+
+Current Context:
+- Cycle phase: {cycle_info.get('phase', 'unknown')}
+- Cycle day: {cycle_info.get('day', 0)}
+- Average daily calories: {avg_calories:.0f}
+- Average daily water: {avg_water:.0f}ml
+- High sodium intake: {avg_sodium > 2000}
+
+Provide explanation in JSON:
+{{
+  "primary_cause": "Main reason for weight change",
+  "contributing_factors": ["factor 1", "factor 2"],
+  "is_water_retention": true/false,
+  "is_hormonal": true/false,
+  "is_dietary": true/false,
+  "explanation": "Simple explanation in 2-3 sentences",
+  "action_items": ["what to do 1", "what to do 2"]
+}}"""
+        
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        import json
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0].strip()
+            else:
+                json_str = response
+            
+            analysis = json.loads(json_str)
+        except:
+            analysis = {
+                "primary_cause": "Multiple factors",
+                "contributing_factors": ["Menstrual cycle phase", "Water retention"],
+                "is_water_retention": True,
+                "is_hormonal": True,
+                "is_dietary": False,
+                "explanation": "Weight fluctuations are normal, especially during different cycle phases.",
+                "action_items": ["Track consistently for better insights"]
+            }
+        
+        return analysis
+        
+    except Exception as e:
+        logging.error(f"Weight analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============= AI INSIGHTS =============
 
 @api_router.get("/insights/daily")
