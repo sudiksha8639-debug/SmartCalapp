@@ -344,7 +344,7 @@ async def create_guest():
     # Create guest user document in database
     guest_user = {
         "user_id": user_id,
-        "email": f"{user_id}@guest.local",
+        "email": f"{user_id}@example.com",  # Use example.com which is valid
         "name": "Guest User",
         "picture": None,
         "created_at": datetime.now(timezone.utc)
