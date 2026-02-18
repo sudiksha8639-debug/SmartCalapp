@@ -792,6 +792,39 @@ Example format: ["insight 1", "insight 2", "insight 3"]"""
 async def root():
     return {"message": "Healthcare App API", "version": "1.0.0"}
 
+@api_router.get("/debug/test-jwt")
+async def test_jwt_debug(authorization: Optional[str] = Header(None)):
+    """Debug endpoint to test JWT parsing"""
+    import traceback
+    if not authorization:
+        return {"error": "No authorization header"}
+    
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return {"error": "Invalid authorization format"}
+    
+    token = parts[1]
+    
+    try:
+        from jose import jwt
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        
+        return {
+            "token_received": token[:20] + "...",
+            "payload": payload,
+            "user_found": user_doc is not None,
+            "user_email": user_doc.get("email") if user_doc else None
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 # Include router and middleware
 app.include_router(api_router)
 
