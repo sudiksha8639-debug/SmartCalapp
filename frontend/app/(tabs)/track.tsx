@@ -20,6 +20,78 @@ export default function TrackScreen() {
   const [activeTab, setActiveTab] = useState<'food' | 'cycle'>('food');
   const [showFoodModal, setShowFoodModal] = useState(false);
   const [showCycleModal, setShowCycleModal] = useState(false);
+  const [foodLogs, setFoodLogs] = useState<any[]>([]);
+  const [cycleLogs, setCycleLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      // Load food logs
+      const foodRes = await fetch(`${BACKEND_URL}/api/food/logs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (foodRes.ok) {
+        const data = await foodRes.json();
+        setFoodLogs(data);
+      }
+
+      // Load cycle logs
+      const cycleRes = await fetch(`${BACKEND_URL}/api/cycle/logs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (cycleRes.ok) {
+        const data = await cycleRes.json();
+        setCycleLogs(data);
+      }
+    } catch (error) {
+      console.error('Load data error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
+  };
+
+  const handleFoodModalClose = () => {
+    setShowFoodModal(false);
+    loadData(); // Reload data after adding
+  };
+
+  const handleCycleModalClose = () => {
+    setShowCycleModal(false);
+    loadData(); // Reload data after adding
+  };
+
+  const deleteFoodLog = async (logId: string) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/food/log/${logId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      loadData();
+    } catch (error) {
+      console.error('Delete error:', error);
+    }
+  };
+
+  const getMealIcon = (mealType: string) => {
+    const icons: any = {
+      breakfast: 'coffee',
+      lunch: 'food',
+      dinner: 'food-variant',
+      snacks: 'cookie'
+    };
+    return icons[mealType] || 'food';
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -58,50 +130,154 @@ export default function TrackScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {activeTab === 'food' ? (
           <View style={styles.content}>
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="food-off" size={64} color="#9CA3AF" />
-              <Text style={styles.emptyTitle}>No meals logged today</Text>
-              <Text style={styles.emptyText}>
-                Start tracking your meals to get personalized nutrition insights
-              </Text>
+            {loading ? (
+              <ActivityIndicator size="large" color="#10B981" style={{marginTop: 32}} />
+            ) : foodLogs.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons name="food-off" size={64} color="#9CA3AF" />
+                <Text style={styles.emptyTitle}>No meals logged yet</Text>
+                <Text style={styles.emptyText}>
+                  Start tracking your meals to get personalized nutrition insights
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.logsContainer}>
+                {foodLogs.map((log) => (
+                  <View key={log.log_id} style={styles.logCard}>
+                    <View style={styles.logHeader}>
+                      <View style={styles.logHeaderLeft}>
+                        <MaterialCommunityIcons 
+                          name={getMealIcon(log.meal_type)} 
+                          size={24} 
+                          color="#10B981" 
+                        />
+                        <View>
+                          <Text style={styles.mealType}>
+                            {log.meal_type.charAt(0).toUpperCase() + log.meal_type.slice(1)}
+                          </Text>
+                          <Text style={styles.logTime}>
+                            {new Date(log.timestamp).toLocaleTimeString('en-US', {
+                              hour: 'numeric',
+                              minute: '2-digit'
+                            })}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity onPress={() => deleteFoodLog(log.log_id)}>
+                        <MaterialCommunityIcons name="delete" size={20} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.logItems}>
+                      {log.items.map((item: any, idx: number) => (
+                        <Text key={idx} style={styles.itemText}>
+                          • {item.name} {item.quantity ? `(${item.quantity})` : ''}
+                        </Text>
+                      ))}
+                    </View>
 
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => setShowFoodModal(true)}
-              >
-                <MaterialCommunityIcons name="plus" size={24} color="white" />
-                <Text style={styles.addButtonText}>Log Meal</Text>
-              </TouchableOpacity>
-            </View>
+                    <View style={styles.nutritionRow}>
+                      <View style={styles.nutritionBadge}>
+                        <Text style={styles.nutritionLabel}>Cal</Text>
+                        <Text style={styles.nutritionValue}>{Math.round(log.total_calories)}</Text>
+                      </View>
+                      <View style={styles.nutritionBadge}>
+                        <Text style={styles.nutritionLabel}>Protein</Text>
+                        <Text style={styles.nutritionValue}>{Math.round(log.total_protein)}g</Text>
+                      </View>
+                      <View style={styles.nutritionBadge}>
+                        <Text style={styles.nutritionLabel}>Carbs</Text>
+                        <Text style={styles.nutritionValue}>{Math.round(log.total_carbs)}g</Text>
+                      </View>
+                      <View style={styles.nutritionBadge}>
+                        <Text style={styles.nutritionLabel}>Fat</Text>
+                        <Text style={styles.nutritionValue}>{Math.round(log.total_fat)}g</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingButton}
+              onPress={() => setShowFoodModal(true)}
+            >
+              <MaterialCommunityIcons name="plus" size={28} color="white" />
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.content}>
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="calendar-blank" size={64} color="#9CA3AF" />
-              <Text style={styles.emptyTitle}>No cycle data</Text>
-              <Text style={styles.emptyText}>
-                Track your menstrual cycle for cycle-aware nutrition recommendations
-              </Text>
+            {loading ? (
+              <ActivityIndicator size="large" color="#10B981" style={{marginTop: 32}} />
+            ) : cycleLogs.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons name="calendar-blank" size={64} color="#9CA3AF" />
+                <Text style={styles.emptyTitle}>No cycle data</Text>
+                <Text style={styles.emptyText}>
+                  Track your menstrual cycle for cycle-aware nutrition recommendations
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.logsContainer}>
+                {cycleLogs.map((log) => (
+                  <View key={log.log_id} style={styles.cycleCard}>
+                    <View style={styles.cycleHeader}>
+                      <MaterialCommunityIcons name="calendar-heart" size={24} color="#EC4899" />
+                      <Text style={styles.cycleDate}>
+                        {new Date(log.start_date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                    </View>
+                    
+                    {log.flow_intensity && (
+                      <Text style={styles.cycleDetail}>
+                        Flow: {log.flow_intensity.charAt(0).toUpperCase() + log.flow_intensity.slice(1)}
+                      </Text>
+                    )}
 
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => setShowCycleModal(true)}
-              >
-                <MaterialCommunityIcons name="plus" size={24} color="white" />
-                <Text style={styles.addButtonText}>Log Period</Text>
-              </TouchableOpacity>
-            </View>
+                    {log.symptoms && log.symptoms.length > 0 && (
+                      <View style={styles.symptomsContainer}>
+                        <Text style={styles.symptomsLabel}>Symptoms:</Text>
+                        <View style={styles.symptomTags}>
+                          {log.symptoms.map((symptom: string, idx: number) => (
+                            <View key={idx} style={styles.symptomTag}>
+                              <Text style={styles.symptomTagText}>{symptom}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.floatingButton}
+              onPress={() => setShowCycleModal(true)}
+            >
+              <MaterialCommunityIcons name="plus" size={28} color="white" />
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
 
-      <FoodModal visible={showFoodModal} onClose={() => setShowFoodModal(false)} token={token} />
+      <FoodModal visible={showFoodModal} onClose={handleFoodModalClose} token={token} />
       <CycleModal
         visible={showCycleModal}
-        onClose={() => setShowCycleModal(false)}
+        onClose={handleCycleModalClose}
         token={token}
       />
     </SafeAreaView>
