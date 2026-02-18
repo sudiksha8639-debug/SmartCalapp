@@ -145,6 +145,8 @@ def create_access_token(data: dict) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 async def get_current_user_from_token(authorization: Optional[str] = Header(None), request: Request = None) -> Optional[User]:
+    logging.info(f"get_current_user_from_token called: auth={authorization is not None}, request={request is not None}")
+    
     # Try to get session_token from cookie first
     session_token = None
     if request:
@@ -156,7 +158,10 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
         if len(parts) == 2 and parts[0].lower() == "bearer":
             session_token = parts[1]
     
+    logging.info(f"Session token extracted: {session_token[:20] if session_token else 'None'}...")
+    
     if not session_token:
+        logging.error("No session token found")
         return None
     
     # Check if it's an Emergent session token
