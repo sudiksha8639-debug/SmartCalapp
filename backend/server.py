@@ -194,8 +194,11 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
                     return None
             else:
                 logging.error(f"User not found in database: {user_id}")
-        except jwt.JWTError as e:
+        except jose.exceptions.JWTError as e:
             logging.error(f"JWT decode error: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error in auth: {e}")
             return None
     
     return None
