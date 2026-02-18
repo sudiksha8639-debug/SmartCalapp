@@ -164,8 +164,8 @@ async def get_current_user_from_token(authorization: Optional[str] = Header(None
         logging.error("No session token found")
         return None
     
-    # Check if it's an Emergent session token
-    if session_token.startswith("eme_") or len(session_token) > 100:
+    # Check if it's an Emergent session token (starts with eme_ prefix)
+    if session_token.startswith("eme_"):
         logging.info("Token identified as Emergent session token")
         session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
         if not session:
