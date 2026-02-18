@@ -82,7 +82,10 @@ export default function OnboardingScreen() {
         updateUser(updatedUser);
         router.replace('/(tabs)');
       } else {
-        Alert.alert('Error', 'Failed to save profile');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.detail || JSON.stringify(errorData) || 'Failed to save profile';
+        console.error('Onboarding error:', response.status, errorData);
+        Alert.alert('Error', errorMsg);
       }
     } catch (error) {
       console.error('Onboarding error:', error);
