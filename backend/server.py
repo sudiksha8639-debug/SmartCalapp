@@ -705,7 +705,12 @@ async def get_current_cycle_info(current_user: User = Depends(require_auth)):
     if not current_user.last_period_date:
         return {"phase": "unknown", "day": 0, "next_period": None}
     
-    days_since = (datetime.now(timezone.utc) - current_user.last_period_date).days
+    # Make last_period_date timezone-aware if it isn't
+    last_period = current_user.last_period_date
+    if last_period.tzinfo is None:
+        last_period = last_period.replace(tzinfo=timezone.utc)
+    
+    days_since = (datetime.now(timezone.utc) - last_period).days
     cycle_day = (days_since % (current_user.cycle_length or 28)) + 1
     
     # Determine phase
