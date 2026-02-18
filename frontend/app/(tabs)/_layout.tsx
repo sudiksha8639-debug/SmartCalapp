@@ -13,13 +13,17 @@ export default function TabLayout() {
           backgroundColor: 'white',
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
-          height: 60,
-          paddingBottom: 8,
+          height: 80,  // Increased height for better spacing
+          paddingBottom: 20,  // More bottom padding to avoid phone buttons
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '500',
+          marginBottom: 4,  // Space between icon and label
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
         },
       }}
     >
@@ -53,7 +57,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'AI Insights',
+          title: 'AI',  // Shortened label
           tabBarIcon: ({ color, size}) => (
             <MaterialCommunityIcons name="brain" size={size} color={color} />
           ),
